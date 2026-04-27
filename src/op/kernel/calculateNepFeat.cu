@@ -61,8 +61,8 @@ __global__ void feat_2b_calc(
         double d12 = d12_radial[rij_idx]; // [rij, x, y, z]
         double fc12, fcp12;
         find_fc_and_fcp(rcut_radial, rcinv_radial, d12, fc12, fcp12);
-        double fn12[MAX_NUM_N];
-        double fnp12[MAX_NUM_N];
+        double fn12[MAX_NUM_N];     // 20*8=160 Bytes
+        double fnp12[MAX_NUM_N];    // 20*8=160 Bytes
         find_fn_and_fnp(
             n_base, rcinv_radial, d12, fc12, fcp12, fn12, fnp12);
         for (int n = 0; n < n_max; ++n) {
