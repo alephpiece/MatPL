@@ -135,9 +135,9 @@ void launch_calculate_nepmbfeat_secondgradout_c3(
     int num_blocks = (total_elements + threads_per_block - 1) / threads_per_block;
     const int N = atom_nums;
     GPU_Vector<double> dfeat_c3(N * maxneighs * atom_types * n_max_3b * n_base_3b, 0.0);
-    // find_angular_gardc_neigh<<<num_blocks, threads_per_block>>>(
+    // find_angular_gardc_neigh_optimized<<<num_blocks, threads_per_block>>>(
     //     total_elements,
-    find_angular_gardc_neigh_optimized<<<N, threads_per_block>>>(
+    find_angular_gardc_neigh_optimized_2<<<N, threads_per_block>>>(
         N,
         grad_second,
         d12, 
@@ -168,8 +168,7 @@ void launch_calculate_nepmbfeat_secondgradout_c3(
     GPU_Vector<double> tmp_dfeat_c3(N * atom_types * n_max_3b * n_base_3b, 0.0);
 
     const int BLOCK_SIZE = 256;
-    const int total_aggregate_elements = N * maxneighs;
-    const int grid_size = (total_aggregate_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    const int grid_size = (N * maxneighs + BLOCK_SIZE - 1) / BLOCK_SIZE;
     aggregate_dfeat_c3_optimized<<<grid_size, BLOCK_SIZE>>>(
         NL,
         atom_map,
