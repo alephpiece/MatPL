@@ -275,8 +275,7 @@ class nep_network:
                                                                     T_0= self.input_param.optimizer_param.t_0*iterations, 
                                                                     T_mult=self.input_param.optimizer_param.t_mult,
                                                                     eta_min=self.input_param.optimizer_param.stop_lr,
-                                                                    last_epoch=-1,
-                                                                    verbose=self.input_param.optimizer_param.verbose)
+                                                                    last_epoch=-1)
 
         else:
             scheduler = None
