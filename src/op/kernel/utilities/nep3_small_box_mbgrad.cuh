@@ -365,6 +365,153 @@ static __global__ void find_angular_gardc_neigh(
 }
 
 
+// 每个 block 处理一个原子，Fp 和 sum_fxyz 移入 shmem。
+static __global__ void find_angular_gardc_neigh_optimized(
+  const int N,
+  const double* grad_second,
+  const double* g_d12,
+  const int64_t* g_NL,
+  const double* de_dfeat,
+  const double* dsnlm_dc, //[i, J, nbase, 24]
+  const double* g_sum_fxyz,
+  const int64_t* g_type,
+  const double * coeff3,
+  double * dfeat_c3,
+  const double rc_angular,
+  const double rcinv_angular,
+  const int atom_nums,
+  const int neigh_num,
+  const int max_3b,
+  const int base_3b,
+  const int num_types,
+  const int num_types_sq,
+  const int L_max3,
+  const int L_max4,
+  const int L_max5,
+  const int feat_2b_nums,
+  const int feat_3b_nums // 3b + 4b + 5b
+  )
+{
+  int n1 = blockIdx.x;
+  if (n1 >= N) return;
+
+  // Block 共享存储
+  __shared__ double shm_sum_fxyz[NUM_OF_ABC * MAX_NUM_N];  // 24*20*8=3840 Bytes
+  __shared__ double shm_Fp[MAX_DIM_ANGULAR];               // (MAX_NUM_N*6)*8=(20*6)*8=960 Bytes
+
+  int neigh_start_idx = n1 * neigh_num;
+  int t1 = g_type[n1];
+
+  int g_sum_start = n1 * max_3b * NUM_OF_ABC;
+  int r12_start_idx =  n1 * neigh_num * 4;
+  int de_start = n1 * (feat_3b_nums + feat_2b_nums);// dE/dq
+  int dsnlm_start_idx = n1 * num_types * base_3b * NUM_OF_ABC;
+  int c3_start_idx = t1 * num_types * max_3b * base_3b;
+
+  // 加载 sum_fxyz 到 shared memory
+  int total_s_elements = max_3b * NUM_OF_ABC;
+  for (int k = threadIdx.x; k < total_s_elements; k += blockDim.x) {
+    shm_sum_fxyz[k] = g_sum_fxyz[g_sum_start + k]; // g_sum is [N, n_max, 24]
+  }
+
+  // 加载 Fp 到 shared memory
+  int b3_nums = max_3b * L_max3;
+  int total_Fp_elements = b3_nums + (L_max4 > 0 ? max_3b : 0) + (L_max5 > 0 ? max_3b : 0);
+
+  for (int k = threadIdx.x; k < total_Fp_elements; k += blockDim.x) {
+    shm_Fp[k] = 0.0;
+  }
+
+  for (int k = threadIdx.x; k < b3_nums; k += blockDim.x) {
+    int nn = k / L_max3;
+    int ll = k % L_max3;
+    shm_Fp[k] = de_dfeat[de_start + feat_2b_nums + ll * max_3b + nn];
+  }
+  if (L_max4 > 0) {
+    for (int k = threadIdx.x; k < max_3b; k += blockDim.x) {
+      shm_Fp[b3_nums + k] = de_dfeat[de_start + feat_2b_nums + b3_nums + k];
+    }
+  }
+  if (L_max5 > 0) {
+    for (int k = threadIdx.x; k < max_3b; k += blockDim.x) {
+      shm_Fp[b3_nums + max_3b + k] = de_dfeat[de_start + feat_2b_nums + b3_nums + max_3b + k];
+    }
+  }
+
+  __syncthreads();
+
+  for (int i1 = threadIdx.x; i1 < neigh_num; i1 += blockDim.x) {
+    int n2 = g_NL[neigh_start_idx + i1];
+    if (n2 < 0) continue;
+    int t2 = g_type[n2];
+
+    int dc_start_idx = (n1 * neigh_num + i1) * num_types * max_3b * base_3b;
+    int rij_idx = r12_start_idx + i1*4;
+    double d12 = g_d12[rij_idx];
+    if (d12 > rc_angular) continue;
+    double r12[3] = {g_d12[rij_idx+1], g_d12[rij_idx+2], g_d12[rij_idx+3]};
+    double scd_r12[4] = {grad_second[rij_idx],grad_second[rij_idx+1],grad_second[rij_idx+2],grad_second[rij_idx+3]};// [r x y z]
+    double f12[4] = {0.0};
+    double fc12, fcp12;
+    find_fc_and_fcp(rc_angular, rcinv_angular, d12, fc12, fcp12);
+
+    double fn12[MAX_NUM_N]; // 20*8=160 Bytes
+    double fnp12[MAX_NUM_N]; // 20*8=160 Bytes
+    find_fn_and_fnp(
+      base_3b, rcinv_angular, d12, fc12, fcp12, fn12, fnp12);
+
+    int c_I_J_idx = c3_start_idx + t2 * max_3b * base_3b;
+    double blm[NUM_OF_ABC] = {0.0};     // 24*8=192 Bytes
+    double rij_blm[NUM_OF_ABC]= {0.0};  // 24*8=192 Bytes
+    double dblm_x[NUM_OF_ABC] = {0.0};  // 24*8=192 Bytes
+    double dblm_y[NUM_OF_ABC] = {0.0};  // 24*8=192 Bytes
+    double dblm_z[NUM_OF_ABC] = {0.0};  // 24*8=192 Bytes
+    double dblm_r[NUM_OF_ABC] = {0.0};  // 24*8=192 Bytes
+    scd_accumulate_blm_rij(d12, r12[0], r12[1], r12[2],
+        blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r);
+    for (int n = 0; n < max_3b; ++n) {
+      double gn12 = 0.0;
+      double gnp12 = 0.0;
+      for (int k = 0; k < base_3b; ++k) {
+        int c_index = c_I_J_idx + n * base_3b + k;
+        gn12 += fn12[k] * coeff3[c_index];
+        gnp12 += fnp12[k] * coeff3[c_index];
+      }
+      // min (1*20*4)*8=640 Bytes, max (20*20*4)*8=12800 Bytes
+      double f12k[TYPES * MAX_NUM_N * 4] = {0.0};// max type is 20
+      if (L_max5 > 0) {
+        scd_accumulate_f12_with_5body(
+          n, d12, r12, gn12, gnp12, shm_Fp, dsnlm_dc, shm_sum_fxyz,
+            blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
+            f12, f12k, scd_r12, fn12, fnp12,
+            t2, num_types, L_max3,
+            max_3b, base_3b, dc_start_idx, dsnlm_start_idx, n1, i1);
+      } else if (L_max4 > 0) {
+        scd_accumulate_f12_with_4body(
+          n, d12, r12, gn12, gnp12, shm_Fp, dsnlm_dc, shm_sum_fxyz,
+            blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
+            f12, f12k, scd_r12, fn12, fnp12,
+            t2, num_types, L_max3,
+            max_3b, base_3b, dc_start_idx, dsnlm_start_idx, n1, i1);
+      } else {
+        scd_accumulate_f12(
+          n, d12, r12, gn12, gnp12, shm_Fp, dsnlm_dc, shm_sum_fxyz,
+            blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
+            f12, f12k, scd_r12, fn12, fnp12,
+            t2, num_types, L_max3,
+            max_3b, base_3b, dc_start_idx, dsnlm_start_idx, n1, i1);
+      }
+      for (int j = 0; j < num_types; ++j){
+        for (int k = 0; k < base_3b; ++k){
+          int dc_id = dc_start_idx + j * max_3b * base_3b + n*base_3b + k;
+          int k_id = j * base_3b * 4 + k * 4;
+          dfeat_c3[dc_id] += (f12k[k_id] + f12k[k_id+1] + f12k[k_id+2] + f12k[k_id+3]);
+        }
+      }
+    }
+  }
+}
+
 
 static __global__ void aggregate_dfeat_c3(
   const int64_t* g_NL,
