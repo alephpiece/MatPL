@@ -135,8 +135,10 @@ void launch_calculate_nepmbfeat_secondgradout_c3(
     int num_blocks = (total_elements + threads_per_block - 1) / threads_per_block;
     const int N = atom_nums;
     GPU_Vector<double> dfeat_c3(N * maxneighs * atom_types * n_max_3b * n_base_3b, 0.0);
-    find_angular_gardc_neigh<<<num_blocks, threads_per_block>>>(
-        total_elements,
+    // find_angular_gardc_neigh<<<num_blocks, threads_per_block>>>(
+    //     total_elements,
+    find_angular_gardc_neigh_optimized<<<N, threads_per_block>>>(
+        N,
         grad_second,
         d12, 
         NL,

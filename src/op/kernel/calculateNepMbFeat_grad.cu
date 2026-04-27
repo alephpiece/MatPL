@@ -38,15 +38,13 @@ void launch_calculate_nepmbfeat_grad(
     if (lmax_4 > 0) feat_3b_num += n_max_3b;
     if (lmax_5 > 0) feat_3b_num += n_max_3b;
     
-    GPU_Vector<double> dfeat_c3(N * n_types * n_max_3b * n_base_3b, 0.0);
     // 优化版本使用两阶段 kernel
     GPU_Vector<double> local_dfeat_c3(N * neigh_num * n_types * n_max_3b * n_base_3b, 0.0);
+    GPU_Vector<double> dfeat_c3(N * n_types * n_max_3b * n_base_3b, 0.0);
 
     // 1. 并行计算局部梯度
-    int total_elements = N * neigh_num;
     int threads_per_block = 256;
-    int num_blocks = (total_elements + threads_per_block - 1) / threads_per_block;
-    find_angular_gard_small_box_optimized<<<num_blocks, threads_per_block>>>(
+    find_angular_gard_small_box_optimized<<<N, threads_per_block>>>(
         N,
         n_types,
         num_types_sq,
@@ -76,6 +74,8 @@ void launch_calculate_nepmbfeat_grad(
     // print_dfeat_c3(dfeat_c3.data(), N, n_types, n_max_3b, n_base_3b);
 
     // 2. 规约求和
+    int total_elements = N * neigh_num;
+    int num_blocks = (total_elements + threads_per_block - 1) / threads_per_block;
     reduce_local_dfeat_c3<<<num_blocks, threads_per_block>>>(
         NL,
         local_dfeat_c3.data(),
