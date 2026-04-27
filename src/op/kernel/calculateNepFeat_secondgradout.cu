@@ -45,6 +45,29 @@ __global__ void compute_gradsecond_gradout(
     }
 }
 
+// 每个线程处理一个(atom, neighbor)对
+__global__ void compute_gradsecond_gradout_optimized(
+    const double *grad_second, // Shape: [atom_nums, maxneighs, 4]
+    const double *dfeat_2b,    // Shape: [atom_nums, maxneighs, n_max_2b]
+    double *gradsecond_gradout, // Shape: [atom_nums, n_max_2b]
+    int atom_nums,
+    int maxneighs,
+    int n_max_2b)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= atom_nums * maxneighs) return;
+
+    int atom_idx = idx / maxneighs;
+    int neigh_idx = idx % maxneighs;
+    double grad_second_val = grad_second[atom_idx * maxneighs * 4 + neigh_idx * 4];
+    int output_base = atom_idx * n_max_2b;
+    int dfeat_base = atom_idx * maxneighs * n_max_2b + neigh_idx * n_max_2b;
+
+    for (int n = 0; n < n_max_2b; ++n) {
+        atomicAdd(&gradsecond_gradout[output_base + n], grad_second_val * dfeat_2b[dfeat_base + n]);
+    }
+}
+
 __global__ void compute_gradsecond_c2(
     const double *grad_second, // Shape: [batch_size, atom_nums, maxneighs, 4]
     const double *de_feat, // Shape: [batch_size, atom_nums, n_max_2b]
@@ -148,6 +171,73 @@ __global__ void reduce_kernel(
     }
 }
 
+// 优化版本使用warp/wavefront级别的规约消除atomicAdd
+__global__ void reduce_kernel_warp_optimized(
+    double *tmp_grad,          // [atom_nums, maxneighs, n_max_2b, n_base_2b]
+    const int64_t *atom_map,   // [atom_nums]
+    const int64_t *NL_radial,  // [atom_nums, maxneighs]
+    const int atom_nums,
+    const int maxneighs,
+    const int n_max_2b,
+    const int n_base_2b,
+    const int atom_types,
+    double *output)            // [atom_types, atom_types, n_max_2b, n_base_2b]
+{
+#if defined(__HIP_PLATFORM_AMD__)
+    const int WAVEFRONT_SIZE = 64;
+#else
+    const int WAVEFRONT_SIZE = 32;
+#endif
+
+    // 每个warp/wavefront负责计算output的一个元素
+    int warp_id = (blockIdx.x * blockDim.x + threadIdx.x) / WAVEFRONT_SIZE;
+    int lane_id = threadIdx.x % WAVEFRONT_SIZE;
+
+    int total_outputs = atom_types * atom_types * n_max_2b * n_base_2b;
+    if (warp_id >= total_outputs) return;
+
+    // 解码output索引: [atom_type_i, atom_type_j, k, l]
+    int atom_type_i = warp_id / (atom_types * n_max_2b * n_base_2b);
+    int remainder = warp_id % (atom_types * n_max_2b * n_base_2b);
+    int atom_type_j = remainder / (n_max_2b * n_base_2b);
+    int kl = remainder % (n_max_2b * n_base_2b);
+    int k = kl / n_base_2b;
+    int l = kl % n_base_2b;
+
+    // 每个lane负责扫描部分(atom, neighbor)对
+    int total_pairs = atom_nums * maxneighs;
+    double local_sum = 0.0;
+    for (int pair_idx = lane_id; pair_idx < total_pairs; pair_idx += WAVEFRONT_SIZE) {
+        int i = pair_idx / maxneighs;
+        int j = pair_idx % maxneighs;
+
+        // 过滤: 只累加匹配的原子类型
+        if (atom_map[i] != atom_type_i) continue;
+
+        int n2 = NL_radial[i * maxneighs + j];
+        if (n2 < 0) continue;
+        if (atom_map[n2] != atom_type_j) continue;
+
+        // 累加tmp_grad的对应元素
+        int tmp_grad_idx = pair_idx * n_max_2b * n_base_2b + k * n_base_2b + l;
+        local_sum += tmp_grad[tmp_grad_idx];
+    }
+
+    // warp/wavefront内规约
+    for (int offset = WAVEFRONT_SIZE / 2; offset > 0; offset /= 2) {
+#if defined(__HIP_PLATFORM_AMD__)
+        local_sum += __shfl_down(local_sum, offset, WAVEFRONT_SIZE);
+#else
+        local_sum += __shfl_down_sync(0xffffffff, local_sum, offset, WAVEFRONT_SIZE);
+#endif
+    }
+
+    // 每个warp/wavefront的第一个lane写入结果 (无竞争)
+    if (lane_id == 0) {
+        output[warp_id] = local_sum;
+    }
+}
+
 // grad_second dim is [batch, atoms, neighs, 4]
 // dfeat_b dim is [batch, atoms, neighs, n_max_2b], dfeat/drij  the x, y, z is 0.
 // do grad_second * dfeat_b
@@ -162,10 +252,11 @@ void launch_calculate_nepfeat_secondgradout(
     const int device
 ) {
     cudaSetDevice(device);
-    dim3 threadsPerBlock(16);
-    dim3 numBlocks((atom_nums + threadsPerBlock.x - 1) / threadsPerBlock.x);
+    const int BLOCK_SIZE = 256;
+    int total_threads = atom_nums * maxneighs;
+    int numBlocks = (total_threads + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    compute_gradsecond_gradout<<<numBlocks, threadsPerBlock>>>(
+    compute_gradsecond_gradout_optimized<<<numBlocks, BLOCK_SIZE>>>(
         grad_second, 
         dfeat_b, 
         gradsecond_gradout,
@@ -213,7 +304,17 @@ void launch_calculate_nepfeat_secondgradout_c2(
         );
     cudaDeviceSynchronize();
 
-    reduce_kernel<<<num_blocks, threads_per_block>>>(
+    int reduction_width = 32;
+#if defined(__HIP_PLATFORM_AMD__)
+    reduction_width = 64;
+#endif
+    // 优化reduce_kernel，每个warp/wavefront处理一个output元素
+    int total_outputs = atom_types * atom_types * n_max_2b * n_base_2b;
+    int total_threads_optimized = total_outputs * reduction_width;
+    int threads_per_block_optimized = 256;
+    int num_blocks_optimized = (total_threads_optimized + threads_per_block_optimized - 1) / threads_per_block_optimized;
+
+    reduce_kernel_warp_optimized<<<num_blocks_optimized, threads_per_block_optimized>>>(
         tmp_grad.data(), atom_map, NL_radial,
         atom_nums, maxneighs,
         n_max_2b, n_base_2b, atom_types, gradsecond_c2

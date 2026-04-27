@@ -402,3 +402,41 @@ static __global__ void aggregate_dfeat_c3(
     }
   }
 }
+
+// 每个线程处理一个(atom, neighbor)对，将dfeat_c3中的梯度累加到tmp_dfeat_c3中
+static __global__ void aggregate_dfeat_c3_optimized(
+  const int64_t* g_NL,
+  const int64_t* g_type,
+  const double* dfeat_c3,
+  double* tmp_dfeat_c3,
+  const int N,
+  const int atom_nums,
+  const int neigh_num,
+  const int num_types,
+  const int max_3b,
+  const int base_3b
+  )
+{
+  int global_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (global_idx >= N * neigh_num) return;
+
+  int n1 = global_idx / neigh_num;
+  int i1 = global_idx % neigh_num;
+
+  int neigh_start_idx = n1 * neigh_num;
+  int n2 = g_NL[neigh_start_idx + i1];
+  if (n2 < 0) return;
+
+  int tmp_start_idx = n1 * num_types * max_3b * base_3b;
+  int dc_idx = n1 * neigh_num * num_types * max_3b * base_3b + i1 * num_types * max_3b * base_3b;
+
+  for (int j = 0; j < num_types; ++j){
+    for (int n = 0; n < max_3b; ++n) {
+      for (int k = 0; k < base_3b; ++k){
+        int dc_id = dc_idx + j * max_3b * base_3b + n*base_3b + k;
+        int tmp_dc_id = tmp_start_idx + j * max_3b * base_3b + n*base_3b + k;
+        atomicAdd(&tmp_dfeat_c3[tmp_dc_id], dfeat_c3[dc_id]);
+      }
+    }
+  }
+}

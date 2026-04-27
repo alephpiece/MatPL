@@ -165,9 +165,10 @@ void launch_calculate_nepmbfeat_secondgradout_c3(
     
     GPU_Vector<double> tmp_dfeat_c3(N * atom_types * n_max_3b * n_base_3b, 0.0);
 
-    const int BLOCK_SIZE = 64;
-    const int grid_size = (N - 1) / BLOCK_SIZE + 1;
-    aggregate_dfeat_c3<<<grid_size, BLOCK_SIZE>>>(
+    const int BLOCK_SIZE = 256;
+    const int total_aggregate_elements = N * maxneighs;
+    const int grid_size = (total_aggregate_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    aggregate_dfeat_c3_optimized<<<grid_size, BLOCK_SIZE>>>(
         NL,
         atom_map,
         dfeat_c3.data(),
