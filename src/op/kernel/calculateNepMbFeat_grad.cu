@@ -29,9 +29,7 @@ void launch_calculate_nepmbfeat_grad(
             const int device_id
 ) {
     cudaSetDevice(device_id);
-    const int BLOCK_SIZE = 64;
     const int N = atom_nums; // N = natoms * batch_size
-    const int grid_size = (N - 1) / BLOCK_SIZE + 1;
     const int num_types_sq = n_types * n_types;
     double rcinv_angular = 1.0 / rcut_angular;
     
@@ -41,7 +39,14 @@ void launch_calculate_nepmbfeat_grad(
     if (lmax_5 > 0) feat_3b_num += n_max_3b;
     
     GPU_Vector<double> dfeat_c3(N * n_types * n_max_3b * n_base_3b, 0.0);
-    find_angular_gard_small_box<<<grid_size, BLOCK_SIZE>>>(
+    // 优化版本使用两阶段 kernel
+    GPU_Vector<double> local_dfeat_c3(N * neigh_num * n_types * n_max_3b * n_base_3b, 0.0);
+
+    // 1. 并行计算局部梯度
+    int total_elements = N * neigh_num;
+    int threads_per_block = 256;
+    int num_blocks = (total_elements + threads_per_block - 1) / threads_per_block;
+    find_angular_gard_small_box_optimized<<<num_blocks, threads_per_block>>>(
         N,
         n_types,
         num_types_sq,
@@ -62,7 +67,7 @@ void launch_calculate_nepmbfeat_grad(
         grad_output - feat_2b_num,
         sum_fxyz,
         dsnlm_dc,
-        dfeat_c3.data(),
+        local_dfeat_c3.data(),
         dfeat_drij,//[batch*atom, neighbornum, 3b_feat_num, 4]
         grad_d12_3b
     );
@@ -70,9 +75,21 @@ void launch_calculate_nepmbfeat_grad(
     
     // print_dfeat_c3(dfeat_c3.data(), N, n_types, n_max_3b, n_base_3b);
 
-    int total_elements = N * n_max_3b * n_base_3b;
-    int threads_per_block = 256;
-    int num_blocks = (total_elements + threads_per_block - 1) / threads_per_block;
+    // 2. 规约求和
+    reduce_local_dfeat_c3<<<num_blocks, threads_per_block>>>(
+        NL,
+        local_dfeat_c3.data(),
+        dfeat_c3.data(),
+        N,
+        neigh_num,
+        n_types,
+        n_max_3b,
+        n_base_3b
+    );
+    CUDA_CHECK_KERNEL
+
+    total_elements = N * n_max_3b * n_base_3b;
+    num_blocks = (total_elements + threads_per_block - 1) / threads_per_block;
     aggregate_features<<<num_blocks, threads_per_block>>>(
     dfeat_c3.data(), 
     atom_map, 
