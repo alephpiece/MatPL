@@ -251,7 +251,8 @@ static __device__ __forceinline__ void scd_get_f12_1(
   const int n2,
   double *f12k)
 { //l = 1
-  int k_start_id = type_j * n_base_angular * 4;
+  // int k_start_id = type_j * n_base_angular * 4;
+  const int k_start_id = 0;
   int k_idx = 0;
   double dfk = 0.0; // dgn(rij)/dc
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
@@ -324,7 +325,8 @@ static __device__ __forceinline__ void scd_get_f12_2(
   )
 {
   // L = 2 c3b 3 4 5 6 7
-  int k_start_id = type_j * n_base_angular * 4;
+  // int k_start_id = type_j * n_base_angular * 4;
+  const int k_start_id = 0;
   int k_idx = 0;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
   for(int k=0; k < n_base_angular; k++) {
@@ -415,7 +417,8 @@ static __device__ __forceinline__ void scd_get_f12_4body(
 {
   // L = 2 c3b 3 4 5 6 7
 
-  int k_start_id = type_j * n_base_angular * 4;
+  // int k_start_id = type_j * n_base_angular * 4;
+  const int k_start_id = 0;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
   int k_idx = 0;
 
@@ -667,7 +670,8 @@ static __device__ __forceinline__ void scd_get_f12_5body(
 )
 {
   // L = 1
-  int k_start_id = type_j * n_base_angular * 4;
+  // int k_start_id = type_j * n_base_angular * 4;
+  const int k_start_id = 0;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
   int k_idx = 0;
   double dnlm_drij[3] = {0.0};
@@ -815,7 +819,8 @@ static __device__ __forceinline__ void scd_get_f12_3(
   double *f12k)
 {
   // L = 3 c3b 8 9 10 11 12 13 14  s 0 1 2 3 4 5 6
-  int k_start_id = type_j * n_base_angular * 4;
+  // int k_start_id = type_j * n_base_angular * 4;
+  const int k_start_id = 0;
   int k_idx = 0;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
   for(int k=0; k < n_base_angular; k++) {
@@ -927,7 +932,8 @@ static __device__ __forceinline__ void scd_get_f12_4(
   const int n2,
   double *f12k)
 {
-  int k_start_id = type_j * n_base_angular * 4;
+  // int k_start_id = type_j * n_base_angular * 4;
+  const int k_start_id = 0;
   int k_idx = 0;
   int dsnlm_idx = dsnlm_start_idx + type_j * n_base_angular * NUM_OF_ABC;
   for(int k=0; k < n_base_angular; k++) {
@@ -1062,10 +1068,12 @@ static __device__ __forceinline__ void scd_get_f12_1_J(
   double *f12k)
 { //l = 1
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){
-    if (type_j == j) continue;
+  const int j = type_j;
+  // for (int j = 0; j < ntypes; j++){
+  //   if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_idx = j * n_base_angular * 4;
+    // int k_start_idx = j * n_base_angular * 4;
+    const int k_start_idx = 0;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
@@ -1093,7 +1101,7 @@ static __device__ __forceinline__ void scd_get_f12_1_J(
       //           n1, n2, k, s[0], s[1]*2.0, s[2]*2.0, fnp, fn, Fp, k, fn12[k], k, fnp12[k], rij_Lsq, rij_L2sq, blm[0], blm[1], blm[2], tmpr, tmpx, tmpy, tmpz);
       // }
     }
-  }
+  // }
 }
 
 static __device__ __forceinline__ void scd_get_f12_4body_J(
@@ -1150,10 +1158,12 @@ static __device__ __forceinline__ void scd_get_f12_4body_J(
   dnlm_dzij[4] = 0.0;
   double dnlm_dc[5] = {0.0};
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
-    if (type_j == j) continue;
+  const int j = type_j;
+  // for (int j = 0; j < ntypes; j++){
+  //   if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_id = j * n_base_angular * 4;
+    // int k_start_id = j * n_base_angular * 4;
+    const int k_start_id = 0;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
@@ -1311,7 +1321,7 @@ static __device__ __forceinline__ void scd_get_f12_4body_J(
       );    
       f12k[k_idx + 3] += Fp * scd_r12[3] * tmpz;
     }
-  }
+  // }
 }
 
 static __device__ __forceinline__ void scd_get_f12_5body_J(
@@ -1370,10 +1380,12 @@ static __device__ __forceinline__ void scd_get_f12_5body_J(
   double ds1s2_c = 0.0;
   double d_tmp = 0.0;
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
-    if (type_j == j) continue;
+  const int j = type_j;
+  // for (int j = 0; j < ntypes; j++){
+  //   if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_id = j * n_base_angular * 4;
+    // int k_start_id = j * n_base_angular * 4;
+    const int k_start_id = 0;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
@@ -1437,7 +1449,7 @@ static __device__ __forceinline__ void scd_get_f12_5body_J(
       tmpz += 4.0 * C5B[2] * (ds1s2_c * ds1s2 + (s2[1] + s2[2]) * d_tmp);
       f12k[k_idx + 3] += Fp * scd_r12[3] * tmpz;
     }
-  }
+  // }
   // if (n1==0 and n2==0){
   //   printf("\t5bL=2 n1=%d n2=%d s0=%lf s1=%lf s2=%lf s3=%lf s4=%lf fnp=%lf fn=%lf Fp=%lf r12=%lf x=%lf y=%lf z=%lf dqr=%lf dqx=%lf dqy=%lf dqz=%lf\n", 
   //           n1, n2, s[0], s[1], s[2], s[3], s[4], fnp, fn, Fp, d12, r12[0], r12[1], r12[2], tmp, tmpx, tmpy, tmpz);
@@ -1474,10 +1486,12 @@ static __device__ __forceinline__ void scd_get_f12_2_J(
 {
   // L = 2 c3b 3 4 5 6 7
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
-    if (type_j == j) continue;
+  const int j = type_j;
+  // for (int j = 0; j < ntypes; j++){
+  //   if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_idx = j * n_base_angular * 4;    
+    // int k_start_idx = j * n_base_angular * 4;
+    const int k_start_idx = 0;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
@@ -1515,7 +1529,7 @@ static __device__ __forceinline__ void scd_get_f12_2_J(
       //           n1, n2, s[0], s[1]*2.0, s[2]*2.0, s[3]*2.0, s[4]*2.0, fnp, fn, Fp, blm[3], blm[4], blm[5], blm[6], blm[7], tmpr, tmpx, tmpy, tmpz);
       // }
     }
-  }
+  // }
 }
 
 
@@ -1548,10 +1562,12 @@ static __device__ __forceinline__ void scd_get_f12_3_J(
 {
   // L = 3 c3b 8 9 10 11 12 13 14  s 0 1 2 3 4 5 6
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
-    if (type_j == j) continue;
+  const int j = type_j;
+  // for (int j = 0; j < ntypes; j++){
+  //   if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_idx = j * n_base_angular * 4;   
+    // int k_start_idx = j * n_base_angular * 4;
+    const int k_start_idx = 0;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
@@ -1600,7 +1616,7 @@ static __device__ __forceinline__ void scd_get_f12_3_J(
       //           n1, n2, s[0], s[1]*2.0, s[2]*2.0, s[3]*2.0, s[4]*2.0, s[5]*2.0, s[6]*2.0, fnp, fn, Fp, blm[8], blm[9], blm[10], blm[11], blm[12], blm[13], blm[14], tmpr, tmpx, tmpy, tmpz);
       // }
     }
-  }
+  // }
 }
 
 
@@ -1632,10 +1648,12 @@ static __device__ __forceinline__ void scd_get_f12_4_J(
   double *f12k)
 {
   int k_idx = 0;
-  for (int j = 0; j < ntypes; j++){  
-    if (type_j == j) continue;
+  const int j = type_j;
+  // for (int j = 0; j < ntypes; j++){
+  //   if (type_j == j) continue;
     int dsnlm_idx = dsnlm_start_idx + j * n_base_angular * NUM_OF_ABC;
-    int k_start_idx = j * n_base_angular * 4;   
+    // int k_start_idx = j * n_base_angular * 4;
+    const int k_start_idx = 0;
     for(int k=0; k < n_base_angular; k++) {
       int dsnlm_i = dsnlm_idx + k * NUM_OF_ABC;
       double tmpr = 0.0, tmpx = 0.0, tmpy = 0.0, tmpz = 0.0;
@@ -1692,7 +1710,7 @@ static __device__ __forceinline__ void scd_get_f12_4_J(
       //           n1, n2, s[0], s[1]*2.0, s[2]*2.0, s[3]*2.0, s[4]*2.0, s[5]*2.0, s[6]*2.0,  s[7]*2.0, s[8]*2.0, fnp, fn, Fp, blm[15], blm[16], blm[17], blm[18], blm[19], blm[20], blm[21], blm[23], blm[23], tmpr, tmpx, tmpy, tmpz);
       // }
     }
-  }
+  // }
 }
 
 static __device__ __forceinline__ void scd_accumulate_f12(
@@ -1723,7 +1741,8 @@ static __device__ __forceinline__ void scd_accumulate_f12(
   const int dc_start_idx,
   const int dsnlm_start_idx,
   const int n1,
-  const int n2) // i-> [ntype, nmax, nbase]-> [ntyp, ]
+  const int n2, // i-> [ntype, nmax, nbase]-> [ntyp, ]
+  const bool same_type = false)
 {
   const double d12inv = 1.0 / d12;
   // l = 1
@@ -1735,17 +1754,19 @@ static __device__ __forceinline__ void scd_accumulate_f12(
     sum_fxyz[n * NUM_OF_ABC + 0] * C3B[0],
     sum_fxyz[n * NUM_OF_ABC + 1] * C3B[1],
     sum_fxyz[n * NUM_OF_ABC + 2] * C3B[2]};
+  if (same_type) {
   scd_get_f12_1(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s1, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_1_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s1, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   // l = 2
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1759,17 +1780,19 @@ static __device__ __forceinline__ void scd_accumulate_f12(
     sum_fxyz[n * NUM_OF_ABC + 6] * C3B[6],
     sum_fxyz[n * NUM_OF_ABC + 7] * C3B[7]};
 
+  if (same_type) {
   scd_get_f12_2(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_2_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   // l = 3
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1784,17 +1807,19 @@ static __device__ __forceinline__ void scd_accumulate_f12(
     sum_fxyz[n * NUM_OF_ABC + 12] * C3B[12],
     sum_fxyz[n * NUM_OF_ABC + 13] * C3B[13],
     sum_fxyz[n * NUM_OF_ABC + 14] * C3B[14]};
+  if (same_type) {
   scd_get_f12_3(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_3_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   // l = 4
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1811,18 +1836,19 @@ static __device__ __forceinline__ void scd_accumulate_f12(
     sum_fxyz[n * NUM_OF_ABC + 21] * C3B[21],
     sum_fxyz[n * NUM_OF_ABC + 22] * C3B[22],
     sum_fxyz[n * NUM_OF_ABC + 23] * C3B[23]};
+  if (same_type) {
   scd_get_f12_4(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_4_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  }
 }
 
 static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
@@ -1853,7 +1879,8 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
   const int dc_start_idx,
   const int dsnlm_start_idx,
   const int n1,
-  const int n2)
+  const int n2,
+  const bool same_type = false)
 {
   const double d12inv = 1.0 / d12;
   double rij_Lsq = d12inv;
@@ -1865,17 +1892,19 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
     sum_fxyz[n * NUM_OF_ABC + 0] * C3B[0],
     sum_fxyz[n * NUM_OF_ABC + 1] * C3B[1],
     sum_fxyz[n * NUM_OF_ABC + 2] * C3B[2]};
+  if (same_type) {
   scd_get_f12_1(fn12, fnp12, 
               blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
               scd_r12, dsnlm_dc, s1, r12, 
               d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
               n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_1_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s1, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   // l = 2
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1889,34 +1918,39 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
     sum_fxyz[n * NUM_OF_ABC + 6],
     sum_fxyz[n * NUM_OF_ABC + 7]};
 
+  if (same_type) {
   scd_get_f12_4body(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_4body_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   s2[0] *= C3B[3];
   s2[1] *= C3B[4];
   s2[2] *= C3B[5];
   s2[3] *= C3B[6];
   s2[4] *= C3B[7];
+  if (same_type) {
   scd_get_f12_2(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k); 
-
+  } else {
   scd_get_f12_2_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
+
   // l = 3
   fnp = fnp * d12inv - fn * d12inv * d12inv;
   fn = fn * d12inv;
@@ -1930,17 +1964,19 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
     sum_fxyz[n * NUM_OF_ABC + 12] * C3B[12],
     sum_fxyz[n * NUM_OF_ABC + 13] * C3B[13],
     sum_fxyz[n * NUM_OF_ABC + 14] * C3B[14]};
+  if (same_type) {
   scd_get_f12_3(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_3_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   // l = 4
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -1957,17 +1993,19 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_4body(
     sum_fxyz[n * NUM_OF_ABC + 21] * C3B[21],
     sum_fxyz[n * NUM_OF_ABC + 22] * C3B[22],
     sum_fxyz[n * NUM_OF_ABC + 23] * C3B[23]};
+  if (same_type) {
   scd_get_f12_4(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_4_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 }
 
 static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
@@ -1998,7 +2036,8 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
   const int dc_start_idx,
   const int dsnlm_start_idx,
   const int n1,
-  const int n2)
+  const int n2,
+  const bool same_type = false)
 {
   const double d12inv = 1.0 / d12;
   double rij_Lsq = d12inv;
@@ -2008,32 +2047,36 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
   fn = fn * d12inv;
   double s1[3] = {
     sum_fxyz[n * NUM_OF_ABC + 0], sum_fxyz[n * NUM_OF_ABC + 1], sum_fxyz[n * NUM_OF_ABC + 2]};
+  if (same_type) {
   scd_get_f12_5body(fn12, fnp12, 
               blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
               scd_r12, dsnlm_dc, s1, r12, 
               d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n_max_angular + n], 
               n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_5body_J(fn12, fnp12, 
               blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
               scd_r12, dsnlm_dc, s1, r12, 
               d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n_max_angular + n], 
               n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-  
+  }
+
   s1[0] *= C3B[0];
   s1[1] *= C3B[1];
   s1[2] *= C3B[2];
+  if (same_type) {
   scd_get_f12_1(fn12, fnp12, 
               blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
               scd_r12, dsnlm_dc, s1, r12, 
               d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
               n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_1_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s1, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   // l = 2
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -2046,34 +2089,38 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
     sum_fxyz[n * NUM_OF_ABC + 5],
     sum_fxyz[n * NUM_OF_ABC + 6],
     sum_fxyz[n * NUM_OF_ABC + 7]};
+  if (same_type) {
   scd_get_f12_4body(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_4body_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n_max_angular * lmax_3 + n],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   s2[0] *= C3B[3];
   s2[1] *= C3B[4];
   s2[2] *= C3B[5];
   s2[3] *= C3B[6];
   s2[4] *= C3B[7];
+  if (same_type) {
   scd_get_f12_2(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k); 
-
+  } else {
   scd_get_f12_2_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s2, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+1],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   // l = 3
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -2088,17 +2135,19 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
     sum_fxyz[n * NUM_OF_ABC + 12] * C3B[12],
     sum_fxyz[n * NUM_OF_ABC + 13] * C3B[13],
     sum_fxyz[n * NUM_OF_ABC + 14] * C3B[14]};
+  if (same_type) {
   scd_get_f12_3(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  } else {
   scd_get_f12_3_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s3, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+2],
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
+  }
 
   // l = 4
   fnp = fnp * d12inv - fn * d12inv * d12inv;
@@ -2115,16 +2164,17 @@ static __device__ __forceinline__ void scd_accumulate_f12_with_5body(
     sum_fxyz[n * NUM_OF_ABC + 21] * C3B[21],
     sum_fxyz[n * NUM_OF_ABC + 22] * C3B[22],
     sum_fxyz[n * NUM_OF_ABC + 23] * C3B[23]};
+  if (same_type) {
   scd_get_f12_4(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-  
+  } else {
   scd_get_f12_4_J(fn12, fnp12, 
                 blm, rij_blm, dblm_x, dblm_y, dblm_z, dblm_r,
                 scd_r12, dsnlm_dc, s4, r12, 
                 d12inv, rij_Lsq, rij_L2sq, fn, fnp, Fp[n*lmax_3+3], 
                 n_base_angular, dsnlm_start_idx, type_j, ntypes, n1, n2, f12k);
-
+  }
 }
