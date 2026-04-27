@@ -1,20 +1,29 @@
 # 1. 包含包
 find_package(Torch REQUIRED)
-enable_language(CUDA)  # 使用现代CMake方式启用CUDA
 
-# 2. 设置 CUDA 架构支持
-set(CMAKE_CUDA_ARCHITECTURES "60;61;70;75;80;86;89;90") 
-message(STATUS "Enabled CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+if(NOT DEFINED MATPL_GPU_BACKEND)
+    set(MATPL_GPU_BACKEND "CUDA")
+endif()
 
-# 3. 全局 CUDA 编译选项
-set(CUDA_NVCC_FLAGS
-    "${CUDA_NVCC_FLAGS}"
-    "--default-stream per-thread"     # 避免隐式同步
-    "--ptxas-options=-v"             # 输出寄存器/共享内存使用
-    "-Xcompiler -Wall"               # 启用警告
-    "-O3"                           # 优化级别
-    "-Wno-deprecated-gpu-targets"    # 抑制弃用警告
-)
+if(MATPL_GPU_BACKEND STREQUAL "HIP")
+    include(${CMAKE_CURRENT_LIST_DIR}/enable_hip.cmake)
+else()
+    enable_language(CUDA)  # 使用现代CMake方式启用CUDA
+
+    # 2. 设置 CUDA 架构支持
+    set(CMAKE_CUDA_ARCHITECTURES "60;61;70;75;80;86;89;90")
+    message(STATUS "Enabled CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+
+    # 3. 全局 CUDA 编译选项
+    set(CUDA_NVCC_FLAGS
+        "${CUDA_NVCC_FLAGS}"
+        "--default-stream per-thread"     # 避免隐式同步
+        "--ptxas-options=-v"             # 输出寄存器/共享内存使用
+        "-Xcompiler -Wall"               # 启用警告
+        "-O3"                           # 优化级别
+        "-Wno-deprecated-gpu-targets"    # 抑制弃用警告
+    )
+endif()
 
 # 4. 添加 TYPES 定义，可以从外部传入
 if(NOT DEFINED NEP_TYPES)
@@ -24,36 +33,61 @@ message(STATUS "NEP TYPES: ${NEP_TYPES}")
 add_definitions(-DTYPESIN=${NEP_TYPES})
 
 # 5. 收集所有源文件
-file(GLOB_RECURSE GPU_SOURCES
+file(GLOB_RECURSE GPU_CPP_SOURCES
     ${CMAKE_SOURCE_DIR}/src/*.cpp
-    ${CMAKE_SOURCE_DIR}/kernel/*.cu
-    ${CMAKE_SOURCE_DIR}/kernel/utilities/*.cu
 )
 
 # 移除绑定文件（绑定文件单独编译）
-list(REMOVE_ITEM GPU_SOURCES ${CMAKE_SOURCE_DIR}/src/CalcOps_bind.cpp)
+list(REMOVE_ITEM GPU_CPP_SOURCES ${CMAKE_SOURCE_DIR}/src/CalcOps_bind.cpp)
+
+if(MATPL_GPU_BACKEND STREQUAL "HIP")
+    file(GLOB_RECURSE GPU_CUDA_SOURCES
+        ${CMAKE_SOURCE_DIR}/kernel/*.cu
+        ${CMAKE_SOURCE_DIR}/kernel/utilities/*.cu
+    )
+    file(GLOB_RECURSE GPU_CUDA_HEADERS
+        ${CMAKE_SOURCE_DIR}/kernel/*.cuh
+        ${CMAKE_SOURCE_DIR}/kernel/utilities/*.cuh
+    )
+    hipify_sources(GPU_KERNEL_SOURCES ${GPU_CUDA_SOURCES} ${GPU_CUDA_HEADERS})
+    set(GPU_SOURCES ${GPU_CPP_SOURCES} ${GPU_KERNEL_SOURCES})
+else()
+    file(GLOB_RECURSE GPU_KERNEL_SOURCES
+        ${CMAKE_SOURCE_DIR}/kernel/*.cu
+        ${CMAKE_SOURCE_DIR}/kernel/utilities/*.cu
+    )
+    set(GPU_SOURCES ${GPU_CPP_SOURCES} ${GPU_KERNEL_SOURCES})
+endif()
 
 # 6. 创建核心计算库（把所有.cpp和.cu文件都编译到这里）
 add_library(CalcOps_cuda SHARED ${GPU_SOURCES})
 
 # 设置头文件包含路径
 target_include_directories(CalcOps_cuda PRIVATE
+    $<$<STREQUAL:${MATPL_GPU_BACKEND},HIP>:${MATPL_HIPIFY_OUTPUT_DIR}>
+    $<$<STREQUAL:${MATPL_GPU_BACKEND},HIP>:${MATPL_HIPIFY_OUTPUT_DIR}/kernel>
+    $<$<STREQUAL:${MATPL_GPU_BACKEND},HIP>:${MATPL_HIPIFY_OUTPUT_DIR}/kernel/utilities>
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/kernel
     ${CMAKE_SOURCE_DIR}/kernel/utilities
 )
 
-# 设置CUDA架构属性
-set_target_properties(CalcOps_cuda PROPERTIES
-    CUDA_ARCHITECTURES "60;61;70;75;80;86;89;90"
-    POSITION_INDEPENDENT_CODE ON
-)
+if(MATPL_GPU_BACKEND STREQUAL "CUDA")
+    # 设置CUDA架构属性
+    set_target_properties(CalcOps_cuda PROPERTIES
+        CUDA_ARCHITECTURES "60;61;70;75;80;86;89;90"
+        POSITION_INDEPENDENT_CODE ON
+    )
+else()
+    set_target_properties(CalcOps_cuda PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+    )
+endif()
 
 # 添加编译选项
-#target_compile_options(CalcOps_cuda PRIVATE
-#    $<$<COMPILE_LANGUAGE:CUDA>:-Wno-deprecated-gpu-targets>
-#    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
-#)
+target_compile_options(CalcOps_cuda PRIVATE
+    $<$<COMPILE_LANGUAGE:HIP>:-D__forceinline__=inline>
+)
 
 # 链接Torch库
 target_link_libraries(CalcOps_cuda PRIVATE ${TORCH_LIBRARIES})

@@ -1,10 +1,12 @@
 add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 
 # 1. Basic info
-cmake_minimum_required(VERSION 3.2 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 project(CalcOps)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED on)
+set(MATPL_OP_BACKEND "auto" CACHE STRING "Operator GPU backend: auto, cuda, hip, or cpu")
+set_property(CACHE MATPL_OP_BACKEND PROPERTY STRINGS auto cuda hip cpu)
 
 # 2. Include Torch and Python paths
 execute_process(COMMAND python3 -c "import torch; print(torch.utils.cmake_prefix_path)" OUTPUT_VARIABLE TORCH_CMAKE_PREFIX_PATH)
@@ -28,25 +30,24 @@ file(MAKE_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/obj)
 file(MAKE_DIRECTORY ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY})
 
-# 4. Detect if PyTorch was built with CUDA support (compile-time support)
-#    NOT whether CUDA devices are available at runtime
+# 4. Detect PyTorch GPU backend support (compile-time support)
 execute_process(
     COMMAND python3 -c "
 import torch
-# Check 1: If PyTorch was compiled with CUDA support
-if torch.cuda.is_available() or hasattr(torch.version, 'cuda'):
-    # Check 2: If torch.version.cuda exists (this indicates CUDA support at compile time)
-    if hasattr(torch.version, 'cuda') and torch.version.cuda is not None:
-        print('TRUE')
-    else:
-        # Some PyTorch builds might have CUDA support but no cuda version string
-        print('TRUE' if torch.cuda.is_built() else 'FALSE')
-else:
-    print('FALSE')
+print('TRUE' if getattr(torch.version, 'cuda', None) is not None else 'FALSE')
 "
     OUTPUT_VARIABLE PYTORCH_BUILT_WITH_CUDA
     OUTPUT_STRIP_TRAILING_WHITESPACE
     RESULT_VARIABLE PYTHON_EXIT_CODE
+)
+execute_process(
+    COMMAND python3 -c "
+import torch
+print('TRUE' if getattr(torch.version, 'hip', None) is not None else 'FALSE')
+"
+    OUTPUT_VARIABLE PYTORCH_BUILT_WITH_HIP
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE PYTHON_HIP_EXIT_CODE
 )
 
 # Handle Python execution errors
@@ -54,10 +55,15 @@ if(NOT PYTHON_EXIT_CODE EQUAL 0)
     message(WARNING "Failed to check PyTorch CUDA support. Assuming no CUDA.")
     set(PYTORCH_BUILT_WITH_CUDA "FALSE")
 endif()
+if(NOT PYTHON_HIP_EXIT_CODE EQUAL 0)
+    message(WARNING "Failed to check PyTorch HIP support. Assuming no HIP.")
+    set(PYTORCH_BUILT_WITH_HIP "FALSE")
+endif()
 
 message(STATUS "PyTorch built with CUDA support: ${PYTORCH_BUILT_WITH_CUDA}")
+message(STATUS "PyTorch built with HIP support: ${PYTORCH_BUILT_WITH_HIP}")
 
-# 5. Detect if CUDA toolkit is available on the system (for compilation)
+# 5. Detect GPU toolchains available on the system (for compilation)
 find_program(NVCC nvcc)
 if(NVCC)
     set(SYSTEM_HAS_CUDA_TOOLKIT TRUE)
@@ -77,39 +83,69 @@ else()
         message(STATUS "Found CUDA toolkit via CUDA_PATH: $ENV{CUDA_PATH}")
     endif()
 endif()
+find_program(HIPCC hipcc)
+if(HIPCC)
+    set(SYSTEM_HAS_HIP_TOOLKIT TRUE)
+    message(STATUS "HIP compiler found: ${HIPCC}")
+else()
+    set(SYSTEM_HAS_HIP_TOOLKIT FALSE)
+    message(STATUS "HIP compiler not found in PATH")
+endif()
 
 # 6. Determine if GPU compilation should proceed
-# We need BOTH: PyTorch built with CUDA AND CUDA toolkit available for compilation
-if(PYTORCH_BUILT_WITH_CUDA AND SYSTEM_HAS_CUDA_TOOLKIT)
-    set(COMPILE_WITH_GPU TRUE)
-    message(STATUS "Enabling GPU compilation: PyTorch has CUDA support AND CUDA toolkit is available")
-elseif(PYTORCH_BUILT_WITH_CUDA AND NOT SYSTEM_HAS_CUDA_TOOLKIT)
-    set(COMPILE_WITH_GPU FALSE)
-    message(WARNING "PyTorch was built with CUDA support but CUDA toolkit is not available for compilation.")
-    message(WARNING "Please install CUDA toolkit or set CUDA_HOME environment variable.")
-    message(WARNING "Building only CPU operators.")
-elseif(NOT PYTORCH_BUILT_WITH_CUDA AND SYSTEM_HAS_CUDA_TOOLKIT)
-    set(COMPILE_WITH_GPU FALSE)
-    message(WARNING "CUDA toolkit is available but PyTorch was not built with CUDA support.")
-    message(WARNING "Please install PyTorch with CUDA support.")
-    message(WARNING "Building only CPU operators.")
+set(COMPILE_WITH_GPU FALSE)
+set(MATPL_GPU_BACKEND "")
+string(TOLOWER "${MATPL_OP_BACKEND}" MATPL_OP_BACKEND_LOWER)
+set(MATPL_OP_BACKEND_OPTIONS auto cuda hip cpu)
+
+if(MATPL_OP_BACKEND_LOWER STREQUAL "cpu")
+    message(STATUS "MATPL_OP_BACKEND=cpu. Building only CPU operators.")
+elseif(MATPL_OP_BACKEND_LOWER STREQUAL "hip")
+    if(PYTORCH_BUILT_WITH_HIP AND SYSTEM_HAS_HIP_TOOLKIT)
+        set(COMPILE_WITH_GPU TRUE)
+        set(MATPL_GPU_BACKEND "HIP")
+        message(STATUS "Enabling HIP operator compilation.")
+    else()
+        message(FATAL_ERROR "MATPL_OP_BACKEND=hip requested, but PyTorch HIP support or hipcc was not found.")
+    endif()
+elseif(MATPL_OP_BACKEND_LOWER STREQUAL "cuda")
+    if(PYTORCH_BUILT_WITH_CUDA AND SYSTEM_HAS_CUDA_TOOLKIT)
+        set(COMPILE_WITH_GPU TRUE)
+        set(MATPL_GPU_BACKEND "CUDA")
+        message(STATUS "Enabling CUDA operator compilation.")
+    else()
+        message(FATAL_ERROR "MATPL_OP_BACKEND=cuda requested, but PyTorch CUDA support or nvcc was not found.")
+    endif()
+elseif(MATPL_OP_BACKEND_LOWER STREQUAL "auto")
+    if(PYTORCH_BUILT_WITH_HIP AND SYSTEM_HAS_HIP_TOOLKIT)
+        set(COMPILE_WITH_GPU TRUE)
+        set(MATPL_GPU_BACKEND "HIP")
+        message(STATUS "Auto-selected HIP operator backend.")
+    elseif(PYTORCH_BUILT_WITH_CUDA AND SYSTEM_HAS_CUDA_TOOLKIT)
+        set(COMPILE_WITH_GPU TRUE)
+        set(MATPL_GPU_BACKEND "CUDA")
+        message(STATUS "Auto-selected CUDA operator backend.")
+    else()
+        message(STATUS "No compatible GPU operator backend detected. Building only CPU operators.")
+    endif()
 else()
-    set(COMPILE_WITH_GPU FALSE)
-    message(STATUS "No CUDA support detected. Building only CPU operators.")
+    message(FATAL_ERROR "Unsupported MATPL_OP_BACKEND='${MATPL_OP_BACKEND}'. Use auto, cuda, hip, or cpu.")
 endif()
+
+set(HAS_CUDA_SUPPORT ${COMPILE_WITH_GPU})
 
 # 7. Always add CPU subdirectory
 add_subdirectory(cmake/cpu)
 
 # 8. Conditionally add GPU subdirectory
 if(COMPILE_WITH_GPU)
-    message(STATUS "Adding GPU subdirectory for CUDA compilation.")
+    message(STATUS "Adding GPU subdirectory for ${MATPL_GPU_BACKEND} compilation.")
     
     # Pass CUDA toolkit info to GPU subdirectory if needed
-    if(DEFINED ENV{CUDA_HOME})
+    if(MATPL_GPU_BACKEND STREQUAL "CUDA" AND DEFINED ENV{CUDA_HOME})
         set(CUDA_TOOLKIT_ROOT_DIR $ENV{CUDA_HOME} CACHE PATH "CUDA Toolkit root directory")
     endif()
-    if(NVCC)
+    if(MATPL_GPU_BACKEND STREQUAL "CUDA" AND NVCC)
         set(CUDA_NVCC_EXECUTABLE ${NVCC} CACHE FILEPATH "CUDA NVCC executable")
     endif()
     
