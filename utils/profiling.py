@@ -1,4 +1,3 @@
-import os
 from contextlib import nullcontext
 
 
@@ -17,7 +16,7 @@ class ProfilingConfig(object):
             raw,
             {
                 "enabled", "activities", "record_shapes", "profile_memory", "with_stack",
-                "with_flops", "schedule", "timeline_trace", "tensorboard_trace", "summary",
+                "with_flops", "schedule", "tensorboard_trace", "summary",
             },
             "profiling",
         )
@@ -29,11 +28,10 @@ class ProfilingConfig(object):
         self.with_flops = self._get_bool(raw, "with_flops", False)
 
         self.schedule = self._parse_schedule(raw.get("schedule", {}))
-        self.timeline_trace = self._parse_timeline_trace(raw)
         self.tensorboard_trace = self._parse_tensorboard_trace(raw)
         self.summary = self._parse_summary(raw.get("summary", {}))
         if self.enabled and not any(
-            target["enabled"] for target in [self.timeline_trace, self.tensorboard_trace, self.summary]
+            target["enabled"] for target in [self.tensorboard_trace, self.summary]
         ):
             raise ValueError("profiling enabled but no export target is enabled")
 
@@ -94,31 +92,10 @@ class ProfilingConfig(object):
 
     @staticmethod
     def _has_export_target(raw):
-        return any(key in raw for key in ["timeline_trace", "tensorboard_trace", "summary"])
+        return any(key in raw for key in ["tensorboard_trace", "summary"])
 
-    def _parse_timeline_trace(self, raw):
+    def _parse_tensorboard_trace(self, raw):
         default_enabled = not self._has_export_target(raw)
-        value = raw.get("timeline_trace", {})
-        if not isinstance(value, dict):
-            raise TypeError("profiling.timeline_trace must be an object")
-        self._reject_unknown(value, {"enabled", "dir_name", "file_name", "format"}, "profiling.timeline_trace")
-        config = {
-            "enabled": value.get("enabled", default_enabled),
-            "dir_name": value.get("dir_name", "profiler/timeline"),
-            "file_name": value.get("file_name", "train"),
-            "format": value.get("format", "chrome_json"),
-        }
-        if not isinstance(config["enabled"], bool):
-            raise TypeError("profiling.timeline_trace.enabled must be a bool")
-        for key in ["dir_name", "file_name"]:
-            if not isinstance(config[key], str):
-                raise TypeError("profiling.timeline_trace.{} must be a string".format(key))
-        if config["format"] != "chrome_json":
-            raise ValueError("profiling.timeline_trace.format only supports 'chrome_json'")
-        return config
-
-    @staticmethod
-    def _parse_tensorboard_trace(raw):
         value = raw.get("tensorboard_trace", {})
         if not isinstance(value, dict):
             raise TypeError("profiling.tensorboard_trace must be an object")
@@ -128,7 +105,7 @@ class ProfilingConfig(object):
             "profiling.tensorboard_trace",
         )
         config = {
-            "enabled": value.get("enabled", False),
+            "enabled": value.get("enabled", default_enabled),
             "dir_name": value.get("dir_name", "profiler/tensorboard"),
             "worker_name": value.get("worker_name", None),
             "use_gzip": value.get("use_gzip", False),
@@ -179,7 +156,6 @@ class ProfilingConfig(object):
             "with_stack": self.with_stack,
             "with_flops": self.with_flops,
             "schedule": dict(self.schedule),
-            "timeline_trace": dict(self.timeline_trace),
             "tensorboard_trace": dict(self.tensorboard_trace),
             "summary": dict(self.summary),
         }
@@ -217,8 +193,6 @@ class MatPLProfiler(object):
             activities.append(ProfilerActivity.CPU)
 
         callbacks = []
-        if self.config.timeline_trace["enabled"]:
-            callbacks.append(self._timeline_trace_callback)
         if self.config.tensorboard_trace["enabled"]:
             tb = self.config.tensorboard_trace
             callbacks.append(
@@ -267,16 +241,6 @@ class MatPLProfiler(object):
     def step(self):
         if self.profiler is not None:
             self.profiler.step()
-
-    def _timeline_trace_callback(self, prof):
-        trace = self.config.timeline_trace
-        os.makedirs(trace["dir_name"], exist_ok=True)
-        step_num = getattr(prof, "step_num", "final")
-        path = os.path.join(
-            trace["dir_name"],
-            "{}_{}_step{}.json".format(trace["file_name"], self.trace_name, step_num),
-        )
-        prof.export_chrome_trace(path)
 
     def _summary_callback(self, prof):
         summary = self.config.summary
