@@ -16,7 +16,7 @@ class ProfilingConfig(object):
             raw,
             {
                 "enabled", "activities", "record_shapes", "profile_memory", "with_stack",
-                "with_flops", "schedule", "tensorboard_trace", "summary",
+                "with_flops", "schedule", "trace", "summary",
             },
             "profiling",
         )
@@ -28,10 +28,10 @@ class ProfilingConfig(object):
         self.with_flops = self._get_bool(raw, "with_flops", False)
 
         self.schedule = self._parse_schedule(raw.get("schedule", {}))
-        self.tensorboard_trace = self._parse_tensorboard_trace(raw)
+        self.trace = self._parse_trace(raw)
         self.summary = self._parse_summary(raw.get("summary", {}))
         if self.enabled and not any(
-            target["enabled"] for target in [self.tensorboard_trace, self.summary]
+            target["enabled"] for target in [self.trace, self.summary]
         ):
             raise ValueError("profiling enabled but no export target is enabled")
 
@@ -92,32 +92,32 @@ class ProfilingConfig(object):
 
     @staticmethod
     def _has_export_target(raw):
-        return any(key in raw for key in ["tensorboard_trace", "summary"])
+        return any(key in raw for key in ["trace", "summary"])
 
-    def _parse_tensorboard_trace(self, raw):
+    def _parse_trace(self, raw):
         default_enabled = not self._has_export_target(raw)
-        value = raw.get("tensorboard_trace", {})
+        value = raw.get("trace", {})
         if not isinstance(value, dict):
-            raise TypeError("profiling.tensorboard_trace must be an object")
+            raise TypeError("profiling.trace must be an object")
         ProfilingConfig._reject_unknown(
             value,
             {"enabled", "dir_name", "worker_name", "use_gzip"},
-            "profiling.tensorboard_trace",
+            "profiling.trace",
         )
         config = {
             "enabled": value.get("enabled", default_enabled),
-            "dir_name": value.get("dir_name", "profiler/tensorboard"),
+            "dir_name": value.get("dir_name", "profiler/trace"),
             "worker_name": value.get("worker_name", None),
             "use_gzip": value.get("use_gzip", False),
         }
         if not isinstance(config["enabled"], bool):
-            raise TypeError("profiling.tensorboard_trace.enabled must be a bool")
+            raise TypeError("profiling.trace.enabled must be a bool")
         if not isinstance(config["dir_name"], str):
-            raise TypeError("profiling.tensorboard_trace.dir_name must be a string")
+            raise TypeError("profiling.trace.dir_name must be a string")
         if config["worker_name"] is not None and not isinstance(config["worker_name"], str):
-            raise TypeError("profiling.tensorboard_trace.worker_name must be a string or null")
+            raise TypeError("profiling.trace.worker_name must be a string or null")
         if not isinstance(config["use_gzip"], bool):
-            raise TypeError("profiling.tensorboard_trace.use_gzip must be a bool")
+            raise TypeError("profiling.trace.use_gzip must be a bool")
         return config
 
     @staticmethod
@@ -156,7 +156,7 @@ class ProfilingConfig(object):
             "with_stack": self.with_stack,
             "with_flops": self.with_flops,
             "schedule": dict(self.schedule),
-            "tensorboard_trace": dict(self.tensorboard_trace),
+            "trace": dict(self.trace),
             "summary": dict(self.summary),
         }
 
@@ -193,13 +193,13 @@ class MatPLProfiler(object):
             activities.append(ProfilerActivity.CPU)
 
         callbacks = []
-        if self.config.tensorboard_trace["enabled"]:
-            tb = self.config.tensorboard_trace
+        if self.config.trace["enabled"]:
+            trace = self.config.trace
             callbacks.append(
                 tensorboard_trace_handler(
-                    tb["dir_name"],
-                    worker_name=tb["worker_name"],
-                    use_gzip=tb["use_gzip"],
+                    trace["dir_name"],
+                    worker_name=trace["worker_name"],
+                    use_gzip=trace["use_gzip"],
                 )
             )
         if self.config.summary["enabled"]:
