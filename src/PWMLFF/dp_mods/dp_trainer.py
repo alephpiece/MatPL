@@ -11,11 +11,11 @@ from torch.autograd import Variable
 from src.loss.dploss import dp_loss, adjust_lr
 from src.optimizer.KFWrapper import KFOptimizerWrapper
 # import horovod.torch as hvd
-from torch.profiler import profile, record_function, ProfilerActivity
 from src.user.input_param import InputParam
 from collections import defaultdict
 from utils.debug_operation import check_cuda_memory
 from utils.train_log import AverageMeter, Summary, ProgressMeter
+from utils.profiling import MatPLProfiler
 
 
 def print_l1_l2(model):
@@ -53,6 +53,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
         prefix="Epoch: [{}]".format(epoch),
     )
     
+    profiler = MatPLProfiler(args.profiling, trace_name="dp_train").start()
     # switch to train mode
     model.train()
 
@@ -160,21 +161,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
             # Ri_d = Variable(Ri_d_cpu[batch_indexs, :natoms].to(device))
 
             batch_size = len(batch_indexs)
-            if args.profiling:
-                print("=" * 60, "Start profiling model inference", "=" * 60)
-                with profile(
-                    activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU],
-                    record_shapes=True,
-                ) as prof:
-                    with record_function("model_inference"):
-                        Etot_predict, Ei_predict, Force_predict, _ = model(
-                            dR_neigh_list, atom_type_map[0], atom_type[0], ImageDR, 0, None, None
-                        )   # atom_type_map: we only need the first element, because it is same for each image of MOVEMENT
-
-                print(prof.key_averages().table(sort_by="cuda_time_total"))
-                print("=" * 60, "Profiling model inference end", "=" * 60)
-                prof.export_chrome_trace("model_infer.json")
-            else:
+            with profiler.record("forward"):
                 if args.optimizer_param.train_egroup is True:
                     Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = model(
                         dR_neigh_list, atom_type_map[0], atom_type[0], ImageDR, 0, Egroup_weight, Divider)
@@ -287,15 +274,18 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
                     natoms_img[0].item(),
                 )
             # import ipdb;ipdb.set_trace()
-            loss.backward()
+            with profiler.record("backward"):
+                loss.backward()
             if args.optimizer_param.norm_type is not None:
                 nn.utils.clip_grad_norm_(model.parameters(), args.optimizer_param.max_norm, args.optimizer_param.norm_type)
             elif args.optimizer_param.clip_value is not None:
                 nn.utils.clip_grad_value_(model.parameters(), args.optimizer_param.clip_value)
-            optimizer.step()
+            with profiler.record("optimizer_step"):
+                optimizer.step()
 
             if scheduler is not None:
                 scheduler.step()
+            profiler.step()
                 
             loss_val = loss
             L1, L2 = print_l1_l2(model)
@@ -342,6 +332,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
                 )
 
     progress.display_summary(["Training Set:"])
+    profiler.stop()
     return (
         losses.avg,
         loss_Etot.root,
@@ -382,6 +373,7 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
         model, optimizer, args.optimizer_param.nselect, args.optimizer_param.groupsize, lambda_l1 = args.optimizer_param.lambda_1, lambda_l2 = args.optimizer_param.lambda_2
     )
     
+    profiler = MatPLProfiler(args.profiling, trace_name="dp_train_kf").start()
     # switch to train mode
     model.train()
 
@@ -468,47 +460,27 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
                 # atom_type_map: we only need the first element, because it is same for each image of MOVEMENT
                 kalman_inputs = [dR_neigh_list, atom_type_map[0], atom_type[0], ImageDR, None, None]
 
-            if args.profiling:
-                print("=" * 60, "Start profiling KF update energy", "=" * 60)
-                with profile(
-                    activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU],
-                    record_shapes=True,
-                ) as prof:
-                    with record_function("kf_update_energy"):
-                        Etot_predict = KFOptWrapper.update_energy(kalman_inputs, Etot_label)
-                print(prof.key_averages().table(sort_by="cuda_time_total"))
-                print("=" * 60, "Profiling KF update energy end", "=" * 60)
-                prof.export_chrome_trace("kf_update_energy.json")
-
-                print("=" * 60, "Start profiling KF update force", "=" * 60)
-                with profile(
-                    activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU],
-                    record_shapes=True,
-                ) as prof:
-                    with record_function("kf_update_force"):
-                        Etot_predict, Ei_predict, Force_predict = KFOptWrapper.update_force(
-                            kalman_inputs, Force_label, 2
-                        )
-                print(prof.key_averages().table(sort_by="cuda_time_total"))
-                print("=" * 60, "Profiling KF update force end", "=" * 60)
-                
-                prof.export_chrome_trace("kf_update_force.json")
-            else:
-                if args.optimizer_param.train_virial is True:
+            if args.optimizer_param.train_virial is True:
+                with profiler.record("kf_update_virial"):
                     Virial_predict = KFOptWrapper.update_virial(kalman_inputs, Virial_label, args.optimizer_param.pre_fac_virial)
                     
-                if args.optimizer_param.train_energy is True: 
+            if args.optimizer_param.train_energy is True:
+                with profiler.record("kf_update_energy"):
                     Etot_predict = KFOptWrapper.update_energy(kalman_inputs, Etot_label, args.optimizer_param.pre_fac_etot)
                 
-                if args.optimizer_param.train_ei is True:
+            if args.optimizer_param.train_ei is True:
+                with profiler.record("kf_update_ei"):
                     Ei_predict = KFOptWrapper.update_ei(kalman_inputs, Ei_label, args.optimizer_param.pre_fac_ei)
 
-                if args.optimizer_param.train_egroup is True:
+            if args.optimizer_param.train_egroup is True:
+                with profiler.record("kf_update_egroup"):
                     Egroup_predict = KFOptWrapper.update_egroup(kalman_inputs, Egroup_label, args.optimizer_param.pre_fac_egroup)
 
-                if args.optimizer_param.train_force is True:
+            if args.optimizer_param.train_force is True:
+                with profiler.record("kf_update_force"):
                     Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = KFOptWrapper.update_force(
                         kalman_inputs, Force_label, args.optimizer_param.pre_fac_force)
+            profiler.step()
 
             loss_F_val = criterion(Force_predict, Force_label)
             L1, L2 = print_l1_l2(model)
@@ -572,6 +544,7 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
         batch_time.all_reduce()
     """
     progress.display_summary(["Training Set:"])
+    profiler.stop()
     return losses.avg, loss_Etot.root, loss_Etot_per_atom.root, loss_Force.root, loss_Ei.root, loss_Egroup.root, loss_Virial.root, loss_Virial_per_atom.root, Sij_max, loss_L1.root, loss_L2.root
 
 def _classify_batchs(atom_type_map, atom_types:int):

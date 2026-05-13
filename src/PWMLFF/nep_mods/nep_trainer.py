@@ -10,11 +10,11 @@ from torch.autograd import Variable
 from src.loss.dploss import dp_loss, adjust_lr
 from src.optimizer.KFWrapper import KFOptimizerWrapper
 # import horovod.torch as hvd
-from torch.profiler import profile, record_function, ProfilerActivity
 from src.user.input_param import InputParam
 from utils.debug_operation import check_cuda_memory
 from collections import defaultdict
 from utils.train_log import AverageMeter, Summary, ProgressMeter
+from utils.profiling import MatPLProfiler
 
 if torch.cuda.is_available():
     lib_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
@@ -101,6 +101,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
         prefix="Epoch: [{}]".format(epoch),
     )
     
+    profiler = MatPLProfiler(args.profiling, trace_name="nep_train").start()
     # switch to train mode
     model.train()
     # check_cuda_memory(epoch, 0, " start train ")
@@ -108,21 +109,22 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
     for i, sample in enumerate(train_loader):
         sample = {key: value.to(device) for key, value in sample.items()}
         FFAtomType = torch.from_numpy(np.array(model.atom_type)).to(device=device, dtype=sample["atom_type_map"].dtype)
-        NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular = \
-            CalcOps.calculate_neighbor(
-            sample["num_atom"],
-            sample["atom_type_map"],
-            FFAtomType-1,
-            sample["box"],
-            sample["box_original"],
-            sample["num_cell"],
-            sample["position"],
-            model.cutoff_radial,
-            model.cutoff_angular,
-            model.max_NN_radial,
-            model.max_NN_angular,
-            True #calculate_neighbor with rij
-        )
+        with profiler.record("neighbor"):
+            NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular = \
+                CalcOps.calculate_neighbor(
+                sample["num_atom"],
+                sample["atom_type_map"],
+                FFAtomType-1,
+                sample["box"],
+                sample["box_original"],
+                sample["num_cell"],
+                sample["position"],
+                model.cutoff_radial,
+                model.cutoff_angular,
+                model.max_NN_radial,
+                model.max_NN_angular,
+                True #calculate_neighbor with rij
+            )
         Virial_label = sample["virial"]
         Etot_label   = sample["energy"]
         Ei_label     = sample["ei"]
@@ -146,10 +148,11 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
             # for param_group in optimizer.param_groups:
             #     param_group["lr"] = adjusted_lr
         learning_rate.update(real_lr)
-        Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = model(
-                NN_radial, NL_radial, Ri_radial, 
-                    NN_angular, NL_angular, Ri_angular,
-                        sample["num_atom"], sample["atom_type_map"], None, None)
+        with profiler.record("forward"):
+            Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = model(
+                    NN_radial, NL_radial, Ri_radial, 
+                        NN_angular, NL_angular, Ri_angular,
+                            sample["num_atom"], sample["atom_type_map"], None, None)
      
         optimizer.zero_grad()
 
@@ -255,15 +258,18 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
                 loss_Ei_val,
                 avg_atom_number,
             )
-        loss.backward()
+        with profiler.record("backward"):
+            loss.backward()
         if args.optimizer_param.norm_type is not None:
             nn.utils.clip_grad_norm_(model.parameters(), args.optimizer_param.max_norm, args.optimizer_param.norm_type)
         elif args.optimizer_param.clip_value is not None:
             nn.utils.clip_grad_value_(model.parameters(), args.optimizer_param.clip_value)
-        optimizer.step()
+        with profiler.record("optimizer_step"):
+            optimizer.step()
         
         if scheduler is not None:
             scheduler.step()
+        profiler.step()
 
         loss_val = loss
         L1, L2 = print_l1_l2(model)
@@ -317,6 +323,7 @@ def train(train_loader, model, criterion, optimizer, scheduler, epoch, start_lr,
         #     torch.cuda.empty_cache()
 
     progress.display_summary(["Training Set:"])
+    profiler.stop()
     return (
         losses.avg,
         loss_Etot.root,
@@ -355,6 +362,7 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
         model, optimizer, args.optimizer_param.nselect, args.optimizer_param.groupsize, lambda_l1 = args.optimizer_param.lambda_1, lambda_l2 = args.optimizer_param.lambda_2
     )
     
+    profiler = MatPLProfiler(args.profiling, trace_name="nep_train_kf").start()
     # switch to train mode
     model.train()
 
@@ -363,21 +371,22 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
         # measure data loading time
         sample = {key: value.to(device) for key, value in sample.items()}
         FFAtomType = torch.from_numpy(np.array(model.atom_type)).to(device=device, dtype=sample["atom_type_map"].dtype)
-        NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular = \
-            CalcOps.calculate_neighbor(
-            sample["num_atom"],
-            sample["atom_type_map"],
-            FFAtomType-1,
-            sample["box"],
-            sample["box_original"],
-            sample["num_cell"],
-            sample["position"],
-            model.cutoff_radial,
-            model.cutoff_angular,
-            model.max_NN_radial,
-            model.max_NN_angular,
-            True #calculate_neighbor
-        )
+        with profiler.record("neighbor"):
+            NN_radial, NN_angular, NL_radial, NL_angular, Ri_radial, Ri_angular = \
+                CalcOps.calculate_neighbor(
+                sample["num_atom"],
+                sample["atom_type_map"],
+                FFAtomType-1,
+                sample["box"],
+                sample["box_original"],
+                sample["num_cell"],
+                sample["position"],
+                model.cutoff_radial,
+                model.cutoff_angular,
+                model.max_NN_radial,
+                model.max_NN_angular,
+                True #calculate_neighbor
+            )
         kalman_inputs = [NN_radial, NL_radial, Ri_radial, NN_angular, NL_angular, Ri_angular, \
                             sample["num_atom"], sample["atom_type_map"], None, None]
         Virial_label = sample["virial"]
@@ -387,22 +396,28 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
         Force_label  = sample["force"]
         if args.optimizer_param.train_virial is True:
             # check_cuda_memory(epoch, i, "train_virial start")
-            Virial_predict = KFOptWrapper.update_virial(kalman_inputs, Virial_label, args.optimizer_param.pre_fac_virial, train_type = "NEP")
+            with profiler.record("kf_update_virial"):
+                Virial_predict = KFOptWrapper.update_virial(kalman_inputs, Virial_label, args.optimizer_param.pre_fac_virial, train_type = "NEP")
         if args.optimizer_param.train_energy is True: 
             # check_cuda_memory(epoch, i, "update_energy start")
-            Etot_predict = KFOptWrapper.update_energy(kalman_inputs, Etot_label, args.optimizer_param.pre_fac_etot, train_type = "NEP")
+            with profiler.record("kf_update_energy"):
+                Etot_predict = KFOptWrapper.update_energy(kalman_inputs, Etot_label, args.optimizer_param.pre_fac_etot, train_type = "NEP")
             # check_cuda_memory(-1, -1, "update_energy end")
         if args.optimizer_param.train_ei is True:
-            Ei_predict = KFOptWrapper.update_ei(kalman_inputs, Ei_label, args.optimizer_param.pre_fac_ei, train_type = "NEP")
+            with profiler.record("kf_update_ei"):
+                Ei_predict = KFOptWrapper.update_ei(kalman_inputs, Ei_label, args.optimizer_param.pre_fac_ei, train_type = "NEP")
 
         if args.optimizer_param.train_egroup is True:
-            Egroup_predict = KFOptWrapper.update_egroup(kalman_inputs, Egroup_label, args.optimizer_param.pre_fac_egroup, train_type = "NEP")
+            with profiler.record("kf_update_egroup"):
+                Egroup_predict = KFOptWrapper.update_egroup(kalman_inputs, Egroup_label, args.optimizer_param.pre_fac_egroup, train_type = "NEP")
 
         if args.optimizer_param.train_force is True:
             # check_cuda_memory(epoch, i, "update_force start")
-            Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = KFOptWrapper.update_force(
-                kalman_inputs, Force_label, args.optimizer_param.pre_fac_force, train_type = "NEP")
+            with profiler.record("kf_update_force"):
+                Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = KFOptWrapper.update_force(
+                    kalman_inputs, Force_label, args.optimizer_param.pre_fac_force, train_type = "NEP")
                 # check_cuda_memory(-1, -1, "update_force end")
+        profiler.step()
         # Force_predict = Force_label
         # Ei_predict = Ei_label
         loss_F_val = criterion(Force_predict, Force_label)
@@ -468,6 +483,7 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
         batch_time.all_reduce()
     """
     progress.display_summary(["Training Set:"])
+    profiler.stop()
     return losses.avg, loss_Etot.root, loss_Etot_per_atom.root, loss_Force.root, loss_Ei.root, loss_Egroup.root, loss_Virial.root, loss_Virial_per_atom.root, loss_L1.root, loss_L2.root
 
 def valid(val_loader, model, criterion, device, args:InputParam):
