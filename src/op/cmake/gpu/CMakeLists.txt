@@ -2,6 +2,12 @@
 find_package(Torch REQUIRED)
 enable_language(CUDA)  # 使用现代CMake方式启用CUDA
 
+if(DEFINED ENV{USE_FASTPT_CUDA} AND "$ENV{USE_FASTPT_CUDA}" STREQUAL "1")
+    # DTK FastPT's nvcc mocker fails when CMake passes /usr/include as
+    # -isystem: GCC's <cmath> then cannot resolve #include_next <math.h>.
+    set(CMAKE_INCLUDE_SYSTEM_FLAG_CUDA "-I")
+endif()
+
 # 2. 设置 CUDA 架构支持
 set(CMAKE_CUDA_ARCHITECTURES "60;61;70;75;80;86;89;90") 
 message(STATUS "Enabled CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")

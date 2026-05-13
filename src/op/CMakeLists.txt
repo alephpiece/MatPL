@@ -29,20 +29,10 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/obj)
 file(MAKE_DIRECTORY ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY})
 
 # 4. Detect if PyTorch was built with CUDA support (compile-time support)
-#    NOT whether CUDA devices are available at runtime
 execute_process(
     COMMAND python3 -c "
 import torch
-# Check 1: If PyTorch was compiled with CUDA support
-if torch.cuda.is_available() or hasattr(torch.version, 'cuda'):
-    # Check 2: If torch.version.cuda exists (this indicates CUDA support at compile time)
-    if hasattr(torch.version, 'cuda') and torch.version.cuda is not None:
-        print('TRUE')
-    else:
-        # Some PyTorch builds might have CUDA support but no cuda version string
-        print('TRUE' if torch.cuda.is_built() else 'FALSE')
-else:
-    print('FALSE')
+print('TRUE' if getattr(torch.version, 'cuda', None) is not None else 'FALSE')
 "
     OUTPUT_VARIABLE PYTORCH_BUILT_WITH_CUDA
     OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -97,6 +87,8 @@ else()
     set(COMPILE_WITH_GPU FALSE)
     message(STATUS "No CUDA support detected. Building only CPU operators.")
 endif()
+
+set(HAS_CUDA_SUPPORT ${COMPILE_WITH_GPU})
 
 # 7. Always add CPU subdirectory
 add_subdirectory(cmake/cpu)
