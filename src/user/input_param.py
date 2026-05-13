@@ -6,6 +6,7 @@ from src.user.model_param import ModelParam
 from src.user.optimizer_param import OptimizerParam
 from src.user.work_file_param import WorkFileStructure
 from src.user.nn_feature_type import Descriptor
+from utils.profiling import ProfilingConfig
 
 from src.user.nep_param import NepParam
 '''
@@ -36,7 +37,7 @@ class InputParam(object):
         self.max_neigh_num = get_parameter("max_neigh_num", json_input, 100)
         self.save_step = get_parameter("save_step", json_input, None)
         self.max_save_num = get_parameter("max_save_num", json_input, 10)
-        self.profiling = get_parameter("profiling", json_input, False)#not realized
+        self.profiling = ProfilingConfig(get_parameter("profiling", json_input, False))
 
         self.set_feature_params(json_input)
         self.set_workdir_structures(json_input)
@@ -297,7 +298,8 @@ class InputParam(object):
         
         # params_dict["precision"] = self.precision
 
-        # params_dict["profiling"] = self.profiling
+        if self.profiling.enabled:
+            params_dict["profiling"] = self.profiling.to_dict()
         # params_dict["workers"] = self.workers
         # params_dict["hvd"] = self.hvd
         # params_dict["world_size"] = self.world_size

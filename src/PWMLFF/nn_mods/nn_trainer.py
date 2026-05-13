@@ -13,6 +13,7 @@ from optimizer.KFWrapper import KFOptimizerWrapper
 from src.aux.inference_plot import inference_plot
 from src.user.input_param import InputParam
 from utils.file_operation import write_arrays_to_file
+from utils.profiling import MatPLProfiler
 
 def print_l1_l2(model):
     params = model.parameters()
@@ -48,6 +49,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
         prefix="Epoch: [{}]".format(epoch),
     )
     
+    profiler = MatPLProfiler(args.profiling, trace_name="nn_train").start()
     # switch to train mode
     model.train()
 
@@ -120,8 +122,9 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
         else:
             kalman_inputs = [input_data, dfeat, neighbor, natoms_img, atom_type, None, None]
         
-        Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = \
-            model(kalman_inputs[0], kalman_inputs[1], kalman_inputs[2], kalman_inputs[3], kalman_inputs[4], kalman_inputs[5], kalman_inputs[6])
+        with profiler.record("forward"):
+            Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = \
+                model(kalman_inputs[0], kalman_inputs[1], kalman_inputs[2], kalman_inputs[3], kalman_inputs[4], kalman_inputs[5], kalman_inputs[6])
                     
         optimizer.zero_grad()
 
@@ -234,8 +237,11 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
                 natoms_img[0, 0].item(),
             )
         # import ipdb;ipdb.set_trace()
-        loss.backward()
-        optimizer.step()
+        with profiler.record("backward"):
+            loss.backward()
+        with profiler.record("optimizer_step"):
+            optimizer.step()
+        profiler.step()
         
         L1, L2 = print_l1_l2(model)
         if args.optimizer_param.lambda_2 is not None:
@@ -265,6 +271,7 @@ def train(train_loader, model, criterion, optimizer, epoch, start_lr, device, ar
             progress.display(i + 1)
 
     progress.display_summary(["Training Set:"])
+    profiler.stop()
     return (
         losses.avg,
         loss_Etot.root,
@@ -316,6 +323,7 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
         model, optimizer, args.optimizer_param.nselect, args.optimizer_param.groupsize, lambda_l1 = args.optimizer_param.lambda_1, lambda_l2 = args.optimizer_param.lambda_2
     )
     
+    profiler = MatPLProfiler(args.profiling, trace_name="nn_train_kf").start()
     # switch to train mode
     model.train()
 
@@ -381,21 +389,27 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
 
         if args.optimizer_param.train_energy: 
             # kalman.update_energy(kalman_inputs, Etot_label, update_prefactor = args.optimizer_param.pre_fac_etot)
-            Etot_predict = KFOptWrapper.update_energy(kalman_inputs, Etot_label, args.optimizer_param.pre_fac_etot, train_type = "NN")
+            with profiler.record("kf_update_energy"):
+                Etot_predict = KFOptWrapper.update_energy(kalman_inputs, Etot_label, args.optimizer_param.pre_fac_etot, train_type = "NN")
             
         if args.optimizer_param.train_ei:
-            Ei_predict = KFOptWrapper.update_ei(kalman_inputs,Ei_label, update_prefactor = args.optimizer_param.pre_fac_ei, train_type = "NN")     
+            with profiler.record("kf_update_ei"):
+                Ei_predict = KFOptWrapper.update_ei(kalman_inputs,Ei_label, update_prefactor = args.optimizer_param.pre_fac_ei, train_type = "NN")     
 
         if args.optimizer_param.train_egroup:
             # kalman.update_egroup(kalman_inputs, Egroup_label)
-            Egroup_predict = KFOptWrapper.update_egroup(kalman_inputs, Egroup_label, args.optimizer_param.pre_fac_egroup, train_type = "NN")
+            with profiler.record("kf_update_egroup"):
+                Egroup_predict = KFOptWrapper.update_egroup(kalman_inputs, Egroup_label, args.optimizer_param.pre_fac_egroup, train_type = "NN")
 
         # if Egroup does not participate in training, the output of Egroup_predict will be None
         if args.optimizer_param.train_force:
-            Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = KFOptWrapper.update_force(
-                    kalman_inputs, Force_label, args.optimizer_param.pre_fac_force, train_type = "NN")
+            with profiler.record("kf_update_force"):
+                Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = KFOptWrapper.update_force(
+                        kalman_inputs, Force_label, args.optimizer_param.pre_fac_force, train_type = "NN")
 
-        Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = model(kalman_inputs[0], kalman_inputs[1], kalman_inputs[2], kalman_inputs[3], kalman_inputs[4], kalman_inputs[5], kalman_inputs[6])
+        with profiler.record("forward"):
+            Etot_predict, Ei_predict, Force_predict, Egroup_predict, Virial_predict = model(kalman_inputs[0], kalman_inputs[1], kalman_inputs[2], kalman_inputs[3], kalman_inputs[4], kalman_inputs[5], kalman_inputs[6])
+        profiler.step()
 
         loss_F_val = criterion(Force_predict, Force_label)
         L1, L2 = print_l1_l2(model)
@@ -454,6 +468,7 @@ def train_KF(train_loader, model, criterion, optimizer, epoch, device, args:Inpu
     #     batch_time.all_reduce()
 
     progress.display_summary(["Training Set:"])
+    profiler.stop()
     return losses.avg, loss_Etot.root, loss_Etot_per_atom.root, loss_Force.root, loss_Ei.root, loss_Egroup.root, loss_Virial.root, loss_Virial_per_atom.root, loss_L1.root, loss_L2.root
 
 
